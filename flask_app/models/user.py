@@ -1,6 +1,9 @@
 # CONNECT DB
 from flask_app.config.mysqlconnection import connectToMySQL
+from flask_app import app
 from flask import flash
+from flask_bcrypt import Bcrypt
+bcrypt = Bcrypt(app)
 import re
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9.+_-]+@[a-zA-Z0-9._-]+\.[a-zA-Z]+$')
 
@@ -20,11 +23,18 @@ class User:
 # CREATE (match DB)
     @classmethod
     def save(cls,data):
+        pw_hash = bcrypt.generate_password_hash(data['password'])
+        user_data = {
+                'first_name': data['first_name'],
+                'last_name': data['last_name'],
+                'email': data['email'],
+                'password': pw_hash
+        }
         query = """
                 INSERT INTO users (first_name,last_name,email,password) 
                 VALUES(%(first_name)s,%(last_name)s,%(email)s,%(password)s);
             """
-        return connectToMySQL(cls.DB).query_db(query,data)
+        return connectToMySQL(cls.DB).query_db(query,user_data)
 
 # READ (all, id, and email)
     @classmethod
@@ -33,21 +43,26 @@ class User:
                 SELECT * FROM users;
                 """
         results = connectToMySQL(cls.DB).query_db(query)
-        users = []
+        user_objects = []
         for row in results:
-            users.append( cls(row))
-        return users
+            user_objects.append( cls(row))
+        return user_objects
 
     @classmethod
     def get_by_id(cls,data):
-        query = "SELECT * FROM users WHERE id = %(id)s;"
+        query = """
+                SELECT * 
+                FROM users 
+                WHERE id = %(id)s;
+                """
         results = connectToMySQL(cls.DB).query_db(query,data)
         return cls(results[0])
     
     @classmethod
     def get_by_email(cls,data):
         query = """
-                SELECT * FROM users 
+                SELECT * 
+                FROM users 
                 WHERE email = %(email)s;
                 """
         results = connectToMySQL(cls.DB).query_db(query,data)
@@ -59,25 +74,24 @@ class User:
 
 # DELETE
 
-# VALIDATE (import flash, re, REGEX)
+# VALIDATE REGISTER (import flash, re, REGEX)
     @staticmethod
     def validate_register(user):
         is_valid = True
-        query = """
-                SELECT * FROM users WHERE email = %(email)s;
-                """
-        results = connectToMySQL(User.DB).query_db(query,user)
-        if len(results) >= 1:
-            flash("Email already in use","register")
-            is_valid = False
-        if not EMAIL_REGEX.match(user['email']):
-            flash("Email not valid","register")
-            is_valid = False
+        data = {'email': user['email']}
+        valid_user = User.get_by_email(data)
+
         if len(user['first_name']) < 3:
             flash("First name: needs at least 3 characters","register")
             is_valid = False
         if len(user['last_name']) < 3:
             flash("Last name: needs at least 3 characters","register")
+            is_valid = False
+        if not EMAIL_REGEX.match(user['email']):
+            flash("Email not valid","register")
+            is_valid = False
+        if valid_user:
+            flash("Email already in use","register")
             is_valid = False
         if len(user['password']) < 8:
             flash("Password: needs at least 8 characters","register")
@@ -85,4 +99,20 @@ class User:
         if user['password'] != user['confirm']:
             flash("Password does not match","register")
             is_valid = False
+        return is_valid
+    
+    # VALIDATE LOGIN
+    @staticmethod
+    def validate_login(user):
+        is_valid = True
+        
+        data= { "email": user["email"]}
+        valid_user = User.get_by_email(data)
+        if not valid_user:
+            flash("Invalid Email or Password","login")
+            is_valid = False
+        if valid_user:
+            if not bcrypt.check_password_hash(valid_user.password, user['password']):
+                flash("Invalid Email or Password","login")
+                is_valid = False
         return is_valid

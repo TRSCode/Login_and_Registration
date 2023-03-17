@@ -1,8 +1,7 @@
-from flask import render_template,redirect,session,request, flash
+from flask import render_template,redirect,session,request
 from flask_app import app
-from flask_app.models.user import User
-from flask_bcrypt import Bcrypt
-bcrypt = Bcrypt(app)
+from flask_app.models.user import User #vs from flask_app.models import user.User
+
 
 # routes to home page to display register and login
 @app.route('/')
@@ -12,32 +11,21 @@ def index():
 # take reg input, validate then if pass update db, route to a welcome page
 @app.route('/register',methods=['POST'])
 def register():
-
     if not User.validate_register(request.form):
         return redirect('/')
-    data ={ 
-        "first_name": request.form['first_name'],
-        "last_name": request.form['last_name'],
-        "email": request.form['email'],
-        "password": bcrypt.generate_password_hash(request.form['password'])
-    }
-    # create session to allow info to follow to other pages, import session
-    id = User.save(data)
-    session['user_id'] = id
-
+    new_user = User.save(request.form)
+    session['user_id'] = new_user
     return redirect('/welcome')
 
 # validate login credentials, make sure to intall bcrypt and import flash and bcrypt
 @app.route('/login',methods=['POST'])
 def login():
-    user = User.get_by_email(request.form)
-
-    if not user:
-        flash("Invalid Email or Password","login")
+    if not User.validate_login(request.form):
         return redirect('/')
-    if not bcrypt.check_password_hash(user.password, request.form['password']):
-        flash("Invalid Email or Password","login")
-        return redirect('/')
+    data = {
+        'email':request.form['email']
+    }
+    user = User.get_by_email(data)
     session['user_id'] = user.id
     return redirect('/welcome')
 
